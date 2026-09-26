@@ -1,3 +1,4 @@
+
 name: Build Legitiv Linux APK
 
 on:
@@ -8,36 +9,62 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Extract source archive
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p source
-          unzip -q LegitivLinux-embedded-0.3.1-source-integrated.zip -d source
-          echo "PROJECT_DIR=$GITHUB_WORKSPACE/source/LegitivLinux-embedded-0.3.1" >> "$GITHUB_ENV"
-          ls -la source/LegitivLinux-embedded-0.3.1
+          unzip -q -o LegitivLinux-embedded-0.3.1-source-integrated.zip -d source
+          PROJECT_DIR="$GITHUB_WORKSPACE/source/LegitivLinux-embedded-0.3.1"
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+          test -x "$PROJECT_DIR/gradlew" || chmod +x "$PROJECT_DIR/gradlew"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          ls -la "$PROJECT_DIR"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
 
       - name: Prepare LibTermux source
         working-directory: ${{ env.PROJECT_DIR }}
-        run: bash tools/bootstrap-libtermux.sh
+        run: bash ./tools/bootstrap-libtermux.sh
 
-      - name: Make Gradle executable
+      - name: Fix LibTermux DataStore key API
         working-directory: ${{ env.PROJECT_DIR }}
-        run: chmod +x gradlew
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="vendor/libtermux/os/src/main/kotlin/com/libtermux/os/settings/DistroSettings.kt"
+          test -f "$FILE"
 
-      - name: Assemble debug APK
+          sed -i \
+            -e 's/intKey/intPreferencesKey/g' \
+            -e 's/stringKey/stringPreferencesKey/g' \
+            -e 's/booleanKey/booleanPreferencesKey/g' \
+            "$FILE"
+
+          if grep -nE '\b(intKey|stringKey|booleanKey)\b' "$FILE"; then
+            echo "Legacy DataStore key helpers are still present."
+            exit 1
+          fi
+
+          echo "Patched $FILE"
+          grep -nE 'PreferencesKey' "$FILE"
+
+      - name: Build debug APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -45,3 +72,4 @@ jobs:
           name: legitiv-linux-debug-apk
           path: source/LegitivLinux-embedded-0.3.1/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
