@@ -4,12 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ main, master ]
-    paths:
-      - '**.kt'
-      - '**.kts'
-      - '**.xml'
-      - '.github/workflows/build-apk.yml'
-      - 'tools/bootstrap-libtermux.sh'
 
 jobs:
   build:
@@ -17,28 +11,37 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout Legitiv
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Extract source archive
+        run: |
+          mkdir -p source
+          unzip -q LegitivLinux-embedded-0.3.1-source-integrated.zip -d source
+          echo "PROJECT_DIR=$GITHUB_WORKSPACE/source/LegitivLinux-embedded-0.3.1" >> "$GITHUB_ENV"
+          ls -la source/LegitivLinux-embedded-0.3.1
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
 
       - name: Prepare LibTermux source
-        run: ./tools/bootstrap-libtermux.sh
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: bash tools/bootstrap-libtermux.sh
 
       - name: Make Gradle executable
-        run: chmod +x ./gradlew
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: chmod +x gradlew
 
       - name: Assemble debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: legitiv-linux-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: source/LegitivLinux-embedded-0.3.1/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
