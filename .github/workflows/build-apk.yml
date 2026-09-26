@@ -3,35 +3,42 @@ name: Build Legitiv Linux APK
 on:
   workflow_dispatch:
   push:
+    branches: [ main, master ]
     paths:
-      - "*.zip"
+      - '**.kt'
+      - '**.kts'
+      - '**.xml'
+      - '.github/workflows/build-apk.yml'
+      - 'tools/bootstrap-libtermux.sh'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Legitiv
+        uses: actions/checkout@v4
 
-      - name: Extract project ZIP
-        run: |
-          mkdir source
-          unzip -o "$(find . -maxdepth 1 -name '*.zip' -print -quit)" -d source
-          find source -name gradlew -type f -print -quit
-
-      - name: Set up Java
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '21'
+          cache: gradle
 
-      - name: Build APK
-        run: |
-          cd "$(dirname "$(find source -name gradlew -type f -print -quit)")"
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+      - name: Prepare LibTermux source
+        run: ./tools/bootstrap-libtermux.sh
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LegitivLinux-debug-apk
-          path: source/**/build/outputs/apk/**/*.apk
+          name: legitiv-linux-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
